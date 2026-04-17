@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d0d0d; color: #e0e0e0; font-family: monospace; padding: 16px; }
+  h1 { color: #00ff88; font-size: 1.2rem; margin-bottom: 4px; }
+  .subtitle { color: #555; font-size: 0.75rem; margin-bottom: 16px; }
+  input { width: 100%; padding: 10px; background: #1a1a1a; border: 1px solid #333;
+          color: #fff; border-radius: 6px; font-size: 0.85rem; margin-bottom: 16px; }
+  .card { background: #141414; border: 1px solid #222; border-radius: 8px;
+          padding: 12px; margin-bottom: 10px; }
+  .question { font-size: 0.85rem; color: #ccc; margin-bottom: 8px; line-height: 1.4; }
+  .row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .yes { background: #0a2e1a; color: #00ff88; padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; }
+  .no { background: #2e0a0a; color: #ff4444; padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; }
+  .vol { color: #888; font-size: 0.72rem; }
+  .tag { color: #4488ff; font-size: 0.7rem; }
+  .status { color: #555; font-size: 0.8rem; text-align: center; padding: 20px; }
+  .bar-wrap { height: 6px; background: #222; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .bar-yes { height: 100%; background: #00ff88; border-radius: 3px; transition: width 0.3s; }
+  a { color: #4488ff; text-decoration: none; font-size: 0.72rem; }
+  .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .count { color: #555; font-size: 0.75rem; }
+</style>
+</head>
+<body>
+
+<h1>⚡ Polymarket Dashboard</h1>
+<p class="subtitle">Live prediction markets — built on public API</p>
+
+<input type="text" id="search" placeholder="Search markets..." oninput="filterMarkets()" />
+
+<div class="header-row">
+  <span class="count" id="count"></span>
+  <span class="count" id="updated"></span>
+</div>
+
+<div id="markets"><p class="status">Loading markets...</p></div>
+
+<script>
+let allMarkets = [];
+
+async function fetchMarkets() {
+  try {
+    const res = await fetch('/api/markets',
+      { headers: { 'Accept': 'application/json' } }
+    );
+    const data = await res.json();
+    allMarkets = data;
+    renderMarkets(allMarkets);
+    document.getElementById('updated').textContent =
+      'Updated: ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    document.getElementById('markets').innerHTML =
+      '<p class="status">Error loading — check connection</p>';
+  }
+}
+
+function renderMarkets(markets) {
+  const container = document.getElementById('markets');
+  document.getElementById('count').textContent = markets.length + ' markets';
+
+  if (!markets.length) {
+    container.innerHTML = '<p class="status">No markets found</p>';
+    return;
+  }
+
+  container.innerHTML = markets.map(m => {
+    const outcomes = parseOutcomes(m);
+    const yesPrice = outcomes.yes !== null ? (outcomes.yes * 100).toFixed(1) + '%' : 'N/A';
+    const noPrice  = outcomes.no  !== null ? (outcomes.no  * 100).toFixed(1) + '%' : 'N/A';
+    const yesNum   = outcomes.yes !== null ? outcomes.yes * 100 : 50;
+    const vol      = m.volume ? '$' + Number(m.volume).toLocaleString(undefined, {maximumFractionDigits: 0}) : 'N/A';
+    const slug     = m.slug || m.conditionId || '';
+    const tag      = m.category || m.tags?.[0]?.label || '';
+
+    return `
+      <div class="card">
+        <div class="question">${m.question}</div>
+        <div class="row">
+          <span class="yes">YES ${yesPrice}</span>
+          <span class="no">NO ${noPrice}</span>
+          <span class="vol">Vol: ${vol}</span>
+        </div>
+        <div class="bar-wrap"><div class="bar-yes" style="width:${yesNum}%"></div></div>
+        <div class="row" style="margin-top:6px">
+          ${tag ? `<span class="tag">#${tag}</span>` : '<span></span>'}
+          <a href="https://polymarket.com/event/${slug}" target="_blank">Trade →</a>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function parseOutcomes(m) {
+  try {
+    if (m.outcomePrices) {
+      const prices = JSON.parse(m.outcomePrices);
+      return { yes: parseFloat(prices[0]), no: parseFloat(prices[1]) };
+    }
+    if (m.tokens?.length >= 2) {
+      return { yes: parseFloat(m.tokens[0].price), no: parseFloat(m.tokens[1].price) };
+    }
+  } catch {}
+  return { yes: null, no: null };
+}
+
+function filterMarkets() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const filtered = allMarkets.filter(m =>
+    m.question?.toLowerCase().includes(q) ||
+    m.category?.toLowerCase().includes(q)
+  );
+  renderMarkets(filtered);
+}
+
+fetchMarkets();
+setInterval(fetchMarkets, 60000); // refresh every 60s
+</script>
+</body>
+</html>
